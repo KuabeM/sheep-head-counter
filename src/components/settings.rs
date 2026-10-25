@@ -1,8 +1,8 @@
 use crate::models::{AuthSession, DEFAULT_COLORS, Player, TableData, create_demo_data};
 use crate::storage::{
     SupabaseConfig, claim_player, clear_auth_session, pull_from_supabase,
-    push_all_local_to_supabase, save_auth_session, save_local_data, supabase_send_magic_link,
-    supabase_sign_in_password, supabase_sign_up, upsert_player_to_supabase,
+    push_all_local_to_supabase, save_auth_session, save_local_data, supabase_sign_in_password,
+    supabase_sign_up, upsert_player_to_supabase,
 };
 use leptos::prelude::*;
 use uuid::Uuid;
@@ -118,44 +118,6 @@ pub fn SettingsView(
                     )));
                 }
                 Err(e) => {
-                    set_feedback_msg.set(Some((false, e)));
-                }
-            }
-        });
-    };
-
-    let on_magic_link = move |_| {
-        let email = auth_email.get().trim().to_string();
-        let cfg = config.get();
-
-        if email.is_empty() {
-            set_feedback_msg.set(Some((
-                false,
-                "Bitte gib deine E-Mail-Adresse für den Magic Link ein.".to_string(),
-            )));
-            return;
-        }
-
-        if !cfg.is_configured() {
-            set_feedback_msg.set(Some((
-                false,
-                "Supabase ist noch nicht konfiguriert.".to_string(),
-            )));
-            return;
-        }
-
-        set_sync_status.set("Sende Magic Link…".to_string());
-        wasm_bindgen_futures::spawn_local(async move {
-            match supabase_send_magic_link(&cfg, &email).await {
-                Ok(()) => {
-                    set_sync_status.set("E-Mail gesendet".to_string());
-                    set_feedback_msg.set(Some((
-                        true,
-                        format!("✨ Magic Link wurde an {email} gesendet! Klicke auf den Link in deiner E-Mail, um dich direkt auf kuabem.github.io/sheep-head-counter einzuloggen."),
-                    )));
-                }
-                Err(e) => {
-                    set_sync_status.set("Fehler".to_string());
                     set_feedback_msg.set(Some((false, e)));
                 }
             }
@@ -465,9 +427,6 @@ pub fn SettingsView(
                                 "Abmelden"
                             </button>
                         })}
-                        <button type="button" class="secondary-btn" on:click=on_magic_link>
-                            "✨ Magic Link senden"
-                        </button>
                         <button type="button" class="secondary-btn" on:click=on_register>
                             "Registrieren"
                         </button>
