@@ -1,7 +1,7 @@
 [build]
 target = "index.html"
 dist = "dist"
-public_url = "./"
+public_url = "/sheep-head-counter/"
 
 [serve]
 port = 8080

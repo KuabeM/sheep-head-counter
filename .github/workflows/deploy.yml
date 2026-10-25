@@ -47,7 +47,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-        run: trunk build --release --public-url "./"
+        run: trunk build --release --public-url "/sheep-head-counter/"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

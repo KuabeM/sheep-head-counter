@@ -9,7 +9,8 @@ use components::session_form::SessionForm;
 use components::settings::SettingsView;
 use leptos::prelude::*;
 use storage::{
-    SupabaseConfig, load_auth_session, load_local_data, pull_from_supabase, save_auth_session,
+    SupabaseConfig, check_url_hash_for_magic_link, load_auth_session, load_local_data,
+    pull_from_supabase, save_auth_session,
 };
 use uuid::Uuid;
 
@@ -39,25 +40,35 @@ fn App() -> impl IntoView {
     let (editing_session_id, set_editing_session_id) = signal::<Option<Uuid>>(None);
     let (sync_status, set_sync_status) = signal(initial_status);
 
-    // On startup: only pull from Supabase if both configured AND authenticated
-    if initial_config.is_configured() && initially_authed {
+    // On startup: check for Magic Link redirect (#access_token=...) or existing authenticated session
+    if initial_config.is_configured() {
         wasm_bindgen_futures::spawn_local(async move {
-            match pull_from_supabase(&initial_config, &initial_auth).await {
-                Ok(remote) => {
-                    if let Some(uid) = initial_auth.user_id {
-                        if let Some(p) = remote.players.iter().find(|p| p.claimed_by == Some(uid)) {
-                            let mut updated_auth = initial_auth.clone();
-                            updated_auth.claimed_player_id = Some(p.id);
-                            updated_auth.is_admin = p.is_admin;
-                            save_auth_session(&updated_auth);
-                            set_auth.set(updated_auth);
+            let mut active_auth = initial_auth.clone();
+            if let Some(magic_session) = check_url_hash_for_magic_link(&initial_config).await {
+                active_auth = magic_session;
+                set_auth.set(active_auth.clone());
+                set_active_tab.set(ActiveTab::Settings);
+            }
+
+            if active_auth.is_authenticated(true) {
+                match pull_from_supabase(&initial_config, &active_auth).await {
+                    Ok(remote) => {
+                        if let Some(uid) = active_auth.user_id {
+                            if let Some(p) = remote.players.iter().find(|p| p.claimed_by == Some(uid)) {
+                                let mut updated_auth = active_auth.clone();
+                                updated_auth.claimed_player_id = Some(p.id);
+                                updated_auth.is_admin = p.is_admin;
+                                save_auth_session(&updated_auth);
+                                set_auth.set(updated_auth);
+                                set_active_tab.set(ActiveTab::Dashboard);
+                            }
                         }
+                        set_table_data.set(remote);
+                        set_sync_status.set("Cloud & Lokal synchron".to_string());
                     }
-                    set_table_data.set(remote);
-                    set_sync_status.set("Cloud & Lokal synchron".to_string());
-                }
-                Err(e) => {
-                    set_sync_status.set(format!("Offline ({e})"));
+                    Err(e) => {
+                        set_sync_status.set(format!("Offline ({e})"));
+                    }
                 }
             }
         });

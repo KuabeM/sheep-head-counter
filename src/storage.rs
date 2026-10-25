@@ -111,14 +111,36 @@ fn apply_supabase_headers(
     req.header("Authorization", &format!("Bearer {key}"))
 }
 
+pub const PRODUCTION_REDIRECT_URL: &str = "https://kuabem.github.io/sheep-head-counter/";
+
+/// Returns the redirect URL for Supabase Auth emails (`https://kuabem.github.io/sheep-head-counter/` in production,
+/// or current origin+pathname when running locally).
+pub fn current_redirect_url() -> String {
+    if let Some(win) = web_sys::window() {
+        let loc = win.location();
+        if let (Ok(origin), Ok(pathname)) = (loc.origin(), loc.pathname()) {
+            if !origin.contains("localhost") && !origin.contains("127.0.0.1") {
+                return format!("{origin}{pathname}");
+            }
+        }
+    }
+    PRODUCTION_REDIRECT_URL.to_string()
+}
+
 // =============================================================================
-// Supabase GoTrue Auth (Email + Password & Signup)
+// Supabase GoTrue Auth (Email + Password, Magic Link & URL Hash Callback)
 // =============================================================================
 
 #[derive(Serialize)]
 struct EmailPasswordPayload<'a> {
     email: &'a str,
     password: &'a str,
+}
+
+#[derive(Serialize)]
+struct MagicLinkPayload<'a> {
+    email: &'a str,
+    create_user: bool,
 }
 
 #[derive(Deserialize)]
@@ -140,6 +162,100 @@ struct GoTrueSignupResponse {
     // When email confirmation is enabled, `/auth/v1/signup` returns the user fields at the top level
     id: Option<Uuid>,
     email: Option<String>,
+}
+
+/// Checks if the browser was redirected back from a Supabase Magic Link / Signup confirmation email
+/// (`#access_token=...&token_type=bearer...`), fetches the user profile from `/auth/v1/user`,
+/// cleans the URL hash, and saves the `AuthSession`.
+pub async fn check_url_hash_for_magic_link(config: &SupabaseConfig) -> Option<AuthSession> {
+    let win = web_sys::window()?;
+    let hash = win.location().hash().ok()?;
+    let trimmed = hash.trim_start_matches('#');
+    if !trimmed.contains("access_token=") {
+        return None;
+    }
+
+    let mut access_token: Option<String> = None;
+    for pair in trimmed.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == "access_token" && !v.is_empty() {
+                access_token = Some(v.to_string());
+                break;
+            }
+        }
+    }
+
+    let token = access_token?;
+
+    // Clear the #access_token=... fragment from the address bar
+    if let (Ok(history), Ok(pathname)) = (win.history(), win.location().pathname()) {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&pathname));
+    }
+
+    if !config.is_configured() {
+        return None;
+    }
+
+    let base = config.project_url.trim_end_matches('/');
+    let user_url = format!("{base}/auth/v1/user");
+    let resp = Request::get(&user_url)
+        .header("apikey", config.publishable_key.trim())
+        .header("Authorization", &format!("Bearer {token}"))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.ok() {
+        return None;
+    }
+
+    let user: GoTrueUser = resp.json().await.ok()?;
+    let session = AuthSession {
+        user_id: Some(user.id),
+        email: user.email,
+        access_token: Some(token),
+        claimed_player_id: None,
+        is_admin: false,
+    };
+    save_auth_session(&session);
+    Some(session)
+}
+
+/// Sends a passwordless Magic Link login email via Supabase Auth (`/auth/v1/otp?redirect_to=...`)
+pub async fn supabase_send_magic_link(
+    config: &SupabaseConfig,
+    email: &str,
+) -> Result<(), String> {
+    if !config.is_configured() {
+        return Err("Supabase URL & Publishable Key sind noch nicht konfiguriert.".to_string());
+    }
+    let base = config.project_url.trim_end_matches('/');
+    let redirect = current_redirect_url();
+    let encoded_redirect = js_sys::encode_uri_component(&redirect);
+    let url = format!("{base}/auth/v1/otp?redirect_to={encoded_redirect}");
+
+    let req = apply_supabase_headers(Request::post(&url), config, None)
+        .header("Content-Type", "application/json")
+        .json(&MagicLinkPayload {
+            email,
+            create_user: true,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Netzwerkfehler: {e}"))?;
+
+    if !resp.ok() {
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!(
+            "Magic-Link Versand fehlgeschlagen ({}): {txt}",
+            resp.status()
+        ));
+    }
+
+    Ok(())
 }
 
 /// Logs in with Email + Password via Supabase Auth (`/auth/v1/token?grant_type=password`)
@@ -199,7 +315,9 @@ pub async fn supabase_sign_up(
         return Err("Supabase URL & Publishable Key sind noch nicht konfiguriert.".to_string());
     }
     let base = config.project_url.trim_end_matches('/');
-    let url = format!("{base}/auth/v1/signup");
+    let redirect = current_redirect_url();
+    let encoded_redirect = js_sys::encode_uri_component(&redirect);
+    let url = format!("{base}/auth/v1/signup?redirect_to={encoded_redirect}");
 
     let req = apply_supabase_headers(Request::post(&url), config, None)
         .header("Content-Type", "application/json")
