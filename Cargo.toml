@@ -1,0 +1,23 @@
+[package]
+name = "sheep-head-counter"
+version = "0.1.0"
+edition = "2024"
+description = "Schafkopf Session & Money Tracker built with Leptos + Supabase"
+
+[dependencies]
+leptos = { version = "0.7", features = ["csr"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+gloo-net = { version = "0.6", features = ["http"] }
+gloo-storage = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlInputElement", "Url", "Blob", "HtmlAnchorElement"] }
+js-sys = "0.3"
+uuid = { version = "1.11", features = ["v4", "js", "serde"] }
+chrono = { version = "0.4", features = ["serde", "wasmbind"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

@@ -1,0 +1,26 @@
+name: Supabase Free Tier Keep-Alive
+
+on:
+  schedule:
+    # Runs every Monday and Thursday at 08:00 UTC so Supabase Free Tier never pauses after 7 days of inactivity
+    - cron: "0 8 * * 1,4"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase RPC endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY secret not set; skipping keep-alive ping."
+            exit 0
+          fi
+          curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ping_keepalive" \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{}"
+          echo "Keep-alive ping succeeded."
