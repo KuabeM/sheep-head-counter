@@ -84,7 +84,7 @@ pub fn Navbar(
                         class=move || if active_tab.get() == ActiveTab::Settings { "nav-btn active" } else { "nav-btn" }
                         on:click=move |_| set_active_tab.set(ActiveTab::Settings)
                     >
-                        "🔑 Login & Spieler"
+                        "⚙️ Spieler & Profil"
                     </button>
                 </nav>
             })}

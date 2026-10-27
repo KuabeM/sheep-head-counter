@@ -1,4 +1,5 @@
-use chrono::NaiveDate;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -62,10 +63,18 @@ pub struct AuthSession {
 
 impl AuthSession {
     pub fn is_logged_in(&self) -> bool {
-        self.user_id.is_some()
+        self.user_id.is_some() && !self.is_jwt_expired()
     }
 
-    /// Returns true if the user is authenticated (has a valid Supabase token when Supabase is configured, or local login when offline)
+    /// Checks whether the stored `access_token` JWT has an `exp` claim that is in the past
+    pub fn is_jwt_expired(&self) -> bool {
+        let Some(ref token) = self.access_token else {
+            return false;
+        };
+        is_jwt_token_expired(token, Utc::now().timestamp())
+    }
+
+    /// Returns true if the user is authenticated (has a valid, non-expired Supabase token when Supabase is configured, or local login when offline)
     pub fn is_authenticated(&self, supabase_configured: bool) -> bool {
         if supabase_configured {
             self.user_id.is_some()
@@ -73,6 +82,7 @@ impl AuthSession {
                     .access_token
                     .as_deref()
                     .is_some_and(|t| !t.trim().is_empty())
+                && !self.is_jwt_expired()
         } else {
             self.user_id.is_some()
         }
@@ -88,8 +98,29 @@ impl AuthSession {
 
     /// Returns true if the current user can manage the table (add/remove players, delete full sessions, edit others)
     pub fn can_manage_table(&self) -> bool {
-        self.is_admin
+        self.is_admin && !self.is_jwt_expired()
     }
+}
+
+/// Decodes the middle payload segment of a JWT and checks if `exp <= now_unix_secs`
+pub fn is_jwt_token_expired(token: &str, now_unix_secs: i64) -> bool {
+    let mut parts = token.trim().split('.');
+    let _header = parts.next();
+    let Some(payload_b64) = parts.next() else {
+        return false;
+    };
+    let clean = payload_b64.trim_end_matches('=');
+    let Ok(bytes) = URL_SAFE_NO_PAD.decode(clean) else {
+        return false;
+    };
+    #[derive(Deserialize)]
+    struct JwtClaims {
+        exp: Option<i64>,
+    }
+    let Ok(claims) = serde_json::from_slice::<JwtClaims>(&bytes) else {
+        return false;
+    };
+    claims.exp.is_some_and(|exp| exp <= now_unix_secs)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -470,6 +501,15 @@ mod tests {
         assert!(admin_auth.can_edit_player(&p_max));
         assert!(admin_auth.can_edit_player(&p_korb));
         assert!(admin_auth.can_manage_table());
+    }
+
+    #[test]
+    fn test_jwt_expiration_check() {
+        // Payload: {"sub":"123","exp":1700000000} -> base64url is eyJzdWIiOiIxMjMiLCJleHAiOjE3MDAwMDAwMDB9
+        let token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMiLCJleHAiOjE3MDAwMDAwMDB9.sig";
+        assert!(!is_jwt_token_expired(token, 1699999999));
+        assert!(is_jwt_token_expired(token, 1700000000));
+        assert!(is_jwt_token_expired(token, 1800000000));
     }
 
     #[test]

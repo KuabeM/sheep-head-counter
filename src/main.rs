@@ -8,9 +8,10 @@ use components::navbar::{ActiveTab, Navbar};
 use components::session_form::SessionForm;
 use components::settings::SettingsView;
 use leptos::prelude::*;
+use models::AuthSession;
 use storage::{
-    SupabaseConfig, check_url_hash_for_magic_link, load_auth_session, load_local_data,
-    pull_from_supabase, save_auth_session,
+    SupabaseConfig, check_url_hash_for_magic_link, is_auth_expired_error, load_auth_session,
+    load_local_data, pull_from_supabase, save_auth_session,
 };
 use uuid::Uuid;
 
@@ -40,6 +41,19 @@ fn App() -> impl IntoView {
     let (editing_session_id, set_editing_session_id) = signal::<Option<Uuid>>(None);
     let (sync_status, set_sync_status) = signal(initial_status);
 
+    // Automatically log out and switch to Login screen if JWT expires before tab switch or when an API call reports AUTH_EXPIRED
+    Effect::new(move |_| {
+        let _tab = active_tab.get();
+        let status = sync_status.get();
+        let cur_auth = auth.get_untracked();
+        if cur_auth.is_jwt_expired() || is_auth_expired_error(&status) {
+            storage::clear_auth_session();
+            set_auth.set(AuthSession::default());
+            set_active_tab.set(ActiveTab::Settings);
+            set_sync_status.set("Sitzung abgelaufen – bitte neu einloggen".to_string());
+        }
+    });
+
     // On startup: check for Magic Link redirect (#access_token=...) or existing authenticated session
     if initial_config.is_configured() {
         wasm_bindgen_futures::spawn_local(async move {
@@ -54,7 +68,9 @@ fn App() -> impl IntoView {
                 match pull_from_supabase(&initial_config, &active_auth).await {
                     Ok(remote) => {
                         if let Some(uid) = active_auth.user_id {
-                            if let Some(p) = remote.players.iter().find(|p| p.claimed_by == Some(uid)) {
+                            if let Some(p) =
+                                remote.players.iter().find(|p| p.claimed_by == Some(uid))
+                            {
                                 let mut updated_auth = active_auth.clone();
                                 updated_auth.claimed_player_id = Some(p.id);
                                 updated_auth.is_admin = p.is_admin;
@@ -67,7 +83,13 @@ fn App() -> impl IntoView {
                         set_sync_status.set("Cloud & Lokal synchron".to_string());
                     }
                     Err(e) => {
-                        set_sync_status.set(format!("Offline ({e})"));
+                        if is_auth_expired_error(&e) {
+                            set_auth.set(AuthSession::default());
+                            set_active_tab.set(ActiveTab::Settings);
+                            set_sync_status.set("Sitzung abgelaufen – bitte neu einloggen".to_string());
+                        } else {
+                            set_sync_status.set(format!("Offline ({e})"));
+                        }
                     }
                 }
             }

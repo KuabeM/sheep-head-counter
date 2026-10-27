@@ -1,6 +1,6 @@
 use crate::models::{AuthSession, DEFAULT_COLORS, Player, TableData, create_demo_data};
 use crate::storage::{
-    SupabaseConfig, claim_player, clear_auth_session, pull_from_supabase,
+    SupabaseConfig, claim_player, clear_auth_session, is_auth_expired_error, pull_from_supabase,
     push_all_local_to_supabase, save_auth_session, save_local_data, supabase_sign_in_password,
     supabase_sign_up, upsert_player_to_supabase,
 };
@@ -118,6 +118,10 @@ pub fn SettingsView(
                     )));
                 }
                 Err(e) => {
+                    if is_auth_expired_error(&e) {
+                        set_auth.set(AuthSession::default());
+                        set_sync_status.set("Sitzung abgelaufen".to_string());
+                    }
                     set_feedback_msg.set(Some((false, e)));
                 }
             }
@@ -156,6 +160,10 @@ pub fn SettingsView(
                     )));
                 }
                 Err(e) => {
+                    if is_auth_expired_error(&e) {
+                        set_auth.set(AuthSession::default());
+                        set_sync_status.set("Sitzung abgelaufen".to_string());
+                    }
                     set_feedback_msg.set(Some((false, e)));
                 }
             }
@@ -383,61 +391,69 @@ pub fn SettingsView(
                 </div>
             })}
 
-            // 1. Account Login & Player Identity Selection
+            // 1. Account Login (hidden when logged in) & Player Identity Selection
             <div class="card">
                 <div class="card-header">
-                    <h2>"🔑 1. Login & Spieler-Identität"</h2>
+                    <h2>
+                        {move || if auth.get().is_authenticated(config.get().is_configured()) {
+                            "👤 1. Deine Spieler-Identität"
+                        } else {
+                            "🔑 Login"
+                        }}
+                    </h2>
                     <span class="card-subtitle">
-                        "Logge dich ein und wähle deinen Namen aus der Runde. Jeder Spieler kann nur seine eigenen Ergebnisse bearbeiten – der Admin (👑) kann alles verwalten."
+                        {move || if auth.get().is_authenticated(config.get().is_configured()) {
+                            let email_str = auth.get().email.unwrap_or_else(|| "Aktiv".to_string());
+                            format!("Angemeldet als {email_str}. Wähle deinen Namen aus der Runde – jeder Spieler kann nur seine eigenen Ergebnisse bearbeiten.")
+                        } else {
+                            "Bitte melde dich mit deiner E-Mail und deinem Passwort an.".to_string()
+                        }}
                     </span>
                 </div>
 
-                <form on:submit=on_login class="session-form" style="margin-bottom: 1.25rem;">
-                    <div class="form-row-2">
-                        <div class="form-group">
-                            <label for="auth-email">"E-Mail-Adresse"</label>
-                            <input
-                                type="text"
-                                id="auth-email"
-                                name="email"
-                                autocomplete="email"
-                                placeholder="korbinian@example.com"
-                                required
-                                prop:value=move || auth_email.get()
-                                on:input=move |ev| set_auth_email.set(event_target_value(&ev))
-                            />
+                {move || (!auth.get().is_authenticated(config.get().is_configured())).then(|| view! {
+                    <form on:submit=on_login class="session-form" style="margin-bottom: 1.25rem;">
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label for="auth-email">"E-Mail-Adresse"</label>
+                                <input
+                                    type="text"
+                                    id="auth-email"
+                                    name="email"
+                                    autocomplete="email"
+                                    placeholder="korbinian@example.com"
+                                    required
+                                    prop:value=move || auth_email.get()
+                                    on:input=move |ev| set_auth_email.set(event_target_value(&ev))
+                                />
+                            </div>
+                            <div class="form-group">
+                                <label for="auth-password">"Passwort"</label>
+                                <input
+                                    type="password"
+                                    id="auth-password"
+                                    name="password"
+                                    autocomplete="current-password"
+                                    placeholder="••••••••"
+                                    prop:value=move || auth_password.get()
+                                    on:input=move |ev| set_auth_password.set(event_target_value(&ev))
+                                />
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="auth-password">"Passwort (für Supabase Auth)"</label>
-                            <input
-                                type="password"
-                                id="auth-password"
-                                name="password"
-                                autocomplete="current-password"
-                                placeholder="••••••••"
-                                prop:value=move || auth_password.get()
-                                on:input=move |ev| set_auth_password.set(event_target_value(&ev))
-                            />
-                        </div>
-                    </div>
 
-                    <div class="form-actions">
-                        {move || auth.get().is_logged_in().then(|| view! {
-                            <button type="button" class="danger-ghost-btn" on:click=on_logout>
-                                "Abmelden"
+                        <div class="form-actions">
+                            <button type="button" class="secondary-btn" on:click=on_register>
+                                "Registrieren"
                             </button>
-                        })}
-                        <button type="button" class="secondary-btn" on:click=on_register>
-                            "Registrieren"
-                        </button>
-                        <button type="submit" class="primary-btn">
-                            "🔑 Einloggen"
-                        </button>
-                    </div>
-                </form>
+                            <button type="submit" class="primary-btn">
+                                "🔑 Einloggen"
+                            </button>
+                        </div>
+                    </form>
+                })}
 
                 {move || auth.get().is_authenticated(config.get().is_configured()).then(|| view! {
-                    <div class="claim-box">
+                    <div class="claim-box" style="border-top: none; padding-top: 0;">
                         <h3 class="sub-heading">"Wer bist du am Tisch? (Profil auswählen)"</h3>
                         <div class="claim-grid">
                             {move || {
@@ -480,6 +496,12 @@ pub fn SettingsView(
                                     }
                                 }).collect_view()
                             }}
+                        </div>
+
+                        <div class="form-actions" style="margin-top: 1.25rem;">
+                            <button type="button" class="danger-ghost-btn" on:click=on_logout>
+                                "🚪 Abmelden"
+                            </button>
                         </div>
                     </div>
                 })}

@@ -1393,6 +1393,7 @@ dependencies = [
 name = "sheep-head-counter"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "gloo-net",
  "gloo-storage",

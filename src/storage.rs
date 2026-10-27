@@ -67,6 +67,10 @@ pub fn save_local_data(data: &TableData) {
 
 pub fn load_auth_session(data: &TableData) -> AuthSession {
     if let Ok(mut session) = LocalStorage::get::<AuthSession>(STORAGE_KEY_AUTH) {
+        if session.is_jwt_expired() {
+            clear_auth_session();
+            return AuthSession::default();
+        }
         if let Some(uid) = session.user_id {
             if let Some(p) = data.players.iter().find(|p| p.claimed_by == Some(uid)) {
                 session.claimed_player_id = Some(p.id);
@@ -81,6 +85,21 @@ pub fn load_auth_session(data: &TableData) -> AuthSession {
     } else {
         AuthSession::default()
     }
+}
+
+pub const AUTH_EXPIRED_MARKER: &str = "AUTH_EXPIRED:";
+
+/// Returns true if an error message or HTTP response indicates an expired/invalid JWT
+pub fn is_auth_expired_error(err: &str) -> bool {
+    err.starts_with(AUTH_EXPIRED_MARKER)
+}
+
+fn check_response_jwt_expired(status: u16, body: &str) -> bool {
+    let lower = body.to_lowercase();
+    status == 401
+        || lower.contains("jwt expired")
+        || lower.contains("pgrst301")
+        || lower.contains("invalid jwt")
 }
 
 pub fn save_auth_session(session: &AuthSession) {
@@ -340,8 +359,13 @@ pub async fn claim_player(
             .map_err(|e| format!("Netzwerkfehler beim Spieler-Verknüpfen: {e}"))?;
 
         if !resp.ok() {
+            let status = resp.status();
             let txt = resp.text().await.unwrap_or_default();
-            return Err(format!("Profil konnte nicht gewählt werden ({}): {txt}", resp.status()));
+            if check_response_jwt_expired(status, &txt) {
+                clear_auth_session();
+                return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+            }
+            return Err(format!("Profil konnte nicht gewählt werden ({status}): {txt}"));
         }
 
         let claimed_player: Player = resp
@@ -403,6 +427,10 @@ pub async fn pull_from_supabase(
     if !config.is_configured() {
         return Err("Supabase ist nicht konfiguriert.".to_string());
     }
+    if auth.is_jwt_expired() {
+        clear_auth_session();
+        return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+    }
     if !auth.is_authenticated(true) {
         return Err("Bitte zuerst einloggen, um Daten zu laden.".to_string());
     }
@@ -419,6 +447,10 @@ pub async fn pull_from_supabase(
     if !p_resp.ok() {
         let status = p_resp.status();
         let txt = p_resp.text().await.unwrap_or_default();
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
         if status == 404 || txt.contains("PGRST205") || txt.contains("players") {
             return Err(format!(
                 "Tabelle 'public.players' nicht in Supabase gefunden ({status}). Bitte führe die Datei 'supabase/schema.sql' im Supabase SQL Editor aus! Details: {txt}"
@@ -441,8 +473,13 @@ pub async fn pull_from_supabase(
         .map_err(|e| format!("Fehler beim Laden der Spielabende: {e}"))?;
 
     if !s_resp.ok() {
+        let status = s_resp.status();
         let txt = s_resp.text().await.unwrap_or_default();
-        return Err(format!("Supabase Fehler ({}): {txt}", s_resp.status()));
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
+        return Err(format!("Supabase Fehler ({status}): {txt}"));
     }
     let rows: Vec<DbSessionRow> = s_resp
         .json()
@@ -493,6 +530,10 @@ pub async fn save_session_to_supabase(
     if !config.is_configured() {
         return Ok(());
     }
+    if auth.is_jwt_expired() {
+        clear_auth_session();
+        return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+    }
 
     if auth.access_token.as_deref().unwrap_or_default().is_empty() {
         return Err("Nicht bei Supabase eingeloggt (kein Access-Token). Bitte unter '🔑 Login & Spieler' mit E-Mail & Passwort einloggen!".to_string());
@@ -519,10 +560,14 @@ pub async fn save_session_to_supabase(
         .map_err(|e| format!("Netzwerkfehler: {e}"))?;
 
     if !s_resp.ok() {
+        let status = s_resp.status();
         let txt = s_resp.text().await.unwrap_or_default();
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
         return Err(format!(
-            "Abend konnte nicht gespeichert werden ({}): {txt}",
-            s_resp.status()
+            "Abend konnte nicht gespeichert werden ({status}): {txt}"
         ));
     }
 
@@ -553,10 +598,14 @@ pub async fn save_session_to_supabase(
         .map_err(|e| format!("Netzwerkfehler: {e}"))?;
 
     if !r_resp.ok() {
+        let status = r_resp.status();
         let txt = r_resp.text().await.unwrap_or_default();
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
         return Err(format!(
-            "Spieler-Ergebnis abgelehnt (RLS Schutz {}): {txt}",
-            r_resp.status()
+            "Spieler-Ergebnis abgelehnt (RLS Schutz {status}): {txt}"
         ));
     }
 
@@ -609,7 +658,12 @@ pub async fn delete_session_from_supabase(
         .map_err(|e| format!("Netzwerkfehler: {e}"))?;
 
     if !resp.ok() {
+        let status = resp.status();
         let txt = resp.text().await.unwrap_or_default();
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
         return Err(format!("Löschen fehlgeschlagen: {txt}"));
     }
     Ok(())
@@ -624,6 +678,10 @@ pub async fn upsert_player_to_supabase(
     if !config.is_configured() {
         return Ok(());
     }
+    if auth.is_jwt_expired() {
+        clear_auth_session();
+        return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+    }
 
     let base = config.project_url.trim_end_matches('/');
     let url = format!("{base}/rest/v1/players?on_conflict=id");
@@ -637,7 +695,12 @@ pub async fn upsert_player_to_supabase(
         .map_err(|e| format!("Netzwerkfehler: {e}"))?;
 
     if !resp.ok() {
+        let status = resp.status();
         let txt = resp.text().await.unwrap_or_default();
+        if check_response_jwt_expired(status, &txt) {
+            clear_auth_session();
+            return Err(format!("{AUTH_EXPIRED_MARKER} Deine Sitzung ist abgelaufen. Bitte neu einloggen."));
+        }
         return Err(format!("Spieler-Speicherfehler: {txt}"));
     }
     Ok(())

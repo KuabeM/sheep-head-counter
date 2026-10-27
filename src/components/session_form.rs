@@ -2,7 +2,7 @@ use crate::components::navbar::ActiveTab;
 use crate::models::{
     AuthSession, GameSession, SessionResult, TableData, format_euros, parse_euros_to_cents,
 };
-use crate::storage::{SupabaseConfig, save_local_data, save_session_to_supabase};
+use crate::storage::{SupabaseConfig, is_auth_expired_error, save_local_data, save_session_to_supabase};
 use chrono::Local;
 use leptos::prelude::*;
 use std::collections::HashMap;
@@ -210,7 +210,11 @@ pub fn SessionForm(
                     }
                 }
                 Err(e) => {
-                    set_sync_status.set(format!("Sync-Fehler: {e}"));
+                    if is_auth_expired_error(&e) {
+                        set_sync_status.set(e);
+                    } else {
+                        set_sync_status.set(format!("Sync-Fehler: {e}"));
+                    }
                 }
             }
         });

@@ -1,6 +1,6 @@
 use crate::components::navbar::ActiveTab;
 use crate::models::{AuthSession, TableData, format_date_de, format_euros};
-use crate::storage::{SupabaseConfig, delete_session_from_supabase, save_local_data};
+use crate::storage::{SupabaseConfig, delete_session_from_supabase, is_auth_expired_error, save_local_data};
 use leptos::prelude::*;
 use uuid::Uuid;
 
@@ -36,7 +36,11 @@ pub fn HistoryView(
                     }
                 }
                 Err(e) => {
-                    set_sync_status.set(format!("Lösch-Fehler: {e}"));
+                    if is_auth_expired_error(&e) {
+                        set_sync_status.set(e);
+                    } else {
+                        set_sync_status.set(format!("Lösch-Fehler: {e}"));
+                    }
                 }
             }
         });
