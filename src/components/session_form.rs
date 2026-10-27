@@ -41,11 +41,10 @@ pub fn SessionForm(
     let (played_at, set_played_at) = signal(init_date);
     let (hours_input, set_hours_input) = signal(init_hours);
     let (note, set_note) = signal(init_note);
-    let (allow_non_zero_sum, set_allow_non_zero_sum) = signal(!auth.get_untracked().is_admin);
+    let (allow_non_zero_sum, set_allow_non_zero_sum) = signal(false);
     let (error_msg, set_error_msg) = signal::<Option<String>>(None);
 
     // Map of player_id -> (participating: bool, amount_str: String)
-    let cur_auth = auth.get_untracked();
     let initial_map: HashMap<Uuid, (bool, String)> = table_data
         .get_untracked()
         .players
@@ -60,12 +59,8 @@ pub fn SessionForm(
                     return (p.id, (false, String::new()));
                 }
             }
-            // For a new session: if Admin, check first 4 active players; if regular player, check own player
-            let check = if cur_auth.is_admin {
-                idx < 4 && p.active
-            } else {
-                cur_auth.claimed_player_id == Some(p.id)
-            };
+            // For a new session: pre-select the first 4 active players
+            let check = idx < 4 && p.active;
             (p.id, (check, String::new()))
         })
         .collect();
@@ -114,9 +109,9 @@ pub fn SessionForm(
         set_error_msg.set(None);
 
         let cur_auth = auth.get();
-        if cur_auth.claimed_player_id.is_none() {
+        if !cur_auth.is_logged_in() {
             set_error_msg.set(Some(
-                "Bitte wähle zuerst unter '🔑 Login & Spieler' dein Spielerprofil aus!".to_string(),
+                "Bitte logge dich zuerst ein, um einen Abend zu speichern.".to_string(),
             ));
             return;
         }
@@ -124,47 +119,36 @@ pub fn SessionForm(
         let map = player_inputs.get();
         let mut results = Vec::new();
         for player in &table_data.get().players {
-            let can_edit = cur_auth.can_edit_player(&player.id);
             if let Some((true, val_str)) = map.get(&player.id) {
-                if can_edit {
-                    match parse_euros_to_cents(val_str) {
-                        Some(cents) => {
-                            results.push(SessionResult {
-                                player_id: player.id,
-                                amount_cents: cents,
-                            });
-                        }
-                        None => {
-                            set_error_msg.set(Some(format!(
-                                "Ungültiger Euro-Betrag für {}. Bitte z.B. 12,50 oder -4,20 eingeben.",
-                                player.name
-                            )));
-                            return;
-                        }
-                    }
-                } else if let Some(ref ex) = existing_session {
-                    // Keep existing read-only result for other players untouched
-                    if let Some(old_cents) = ex.result_for_player(&player.id) {
+                match parse_euros_to_cents(val_str) {
+                    Some(cents) => {
                         results.push(SessionResult {
                             player_id: player.id,
-                            amount_cents: old_cents,
+                            amount_cents: cents,
                         });
+                    }
+                    None => {
+                        set_error_msg.set(Some(format!(
+                            "Ungültiger Euro-Betrag für {}. Bitte z.B. 12,50 oder -4,20 eingeben.",
+                            player.name
+                        )));
+                        return;
                     }
                 }
             }
         }
 
-        if results.is_empty() {
+        if results.len() < 2 {
             set_error_msg.set(Some(
-                "Bitte mindestens dein eigenes Ergebnis eintragen.".to_string(),
+                "Bitte mindestens 2 teilnehmende Spieler auswählen.".to_string(),
             ));
             return;
         }
 
         let sum: i64 = results.iter().map(|r| r.amount_cents).sum();
-        if cur_auth.is_admin && sum != 0 && !allow_non_zero_sum.get() {
+        if sum != 0 && !allow_non_zero_sum.get() {
             set_error_msg.set(Some(format!(
-                "Die Summe aller Ergebnisse ist {} statt 0,00 €. Nutze '⚖️ Ausgleichen' oder aktiviere unten die Abweichungs-Option (falls noch nicht alle Spieler eingetragen haben).",
+                "Die Summe aller Ergebnisse ist {} statt 0,00 €. Nutze '⚖️ Ausgleichen' beim letzten Spieler oder aktiviere unten die Abweichungs-Option.",
                 format_euros(sum, true)
             )));
             return;
@@ -234,33 +218,9 @@ pub fn SessionForm(
                         }}
                     </h2>
                     <span class="card-subtitle">
-                        {move || {
-                            let a = auth.get();
-                            if a.is_admin {
-                                "👑 Admin-Modus: Du kannst die Ergebnisse für alle Spieler eintragen und bearbeiten.".to_string()
-                            } else if let Some(pid) = a.claimed_player_id {
-                                let name = table_data.get().player_by_id(&pid).map(|p| p.name.clone()).unwrap_or_default();
-                                format!("👤 Angemeldet als {name}: Du kannst deinen eigenen Gewinn/Verlust eintragen. Andere Spieler sind schreibgeschützt.")
-                            } else {
-                                "🔒 Bitte zuerst unter '🔑 Login & Spieler' dein Profil auswählen!".to_string()
-                            }
-                        }}
+                        "Trage das Endergebnis (Gewinn / Verlust in €) für die Spieler des Abends ein."
                     </span>
                 </div>
-
-                {move || auth.get().claimed_player_id.is_none().then(|| view! {
-                    <div class="alert-error" style="margin-bottom: 1rem;">
-                        "Du hast noch kein Spielerprofil ausgewählt. "
-                        <button
-                            type="button"
-                            class="secondary-btn"
-                            style="margin-left: 0.75rem;"
-                            on:click=move |_| set_active_tab.set(ActiveTab::Settings)
-                        >
-                            "Jetzt Spielerprofil wählen →"
-                        </button>
-                    </div>
-                })}
 
                 <form on:submit=on_submit class="session-form">
                     <fieldset class="form-fieldset">
@@ -308,7 +268,7 @@ pub fn SessionForm(
                     <fieldset class="form-fieldset">
                         <legend>"2. Endergebnis pro Spieler (in Euro)"</legend>
                         <p class="fieldset-help">
-                            "Positive Zahlen für Gewinn (z.B. " <code>"14,50"</code> "), negative für Verlust (z.B. " <code>"-6,20"</code> "). Du kannst nur dein eigenes Feld bearbeiten (der Admin kann alle Felder bearbeiten)."
+                            "Positive Zahlen für Gewinn (z.B. " <code>"14,50"</code> "), negative für Verlust (z.B. " <code>"-6,20"</code> "). Mit " <strong>"⚖️ Ausgleichen"</strong> " wird der Restbetrag auf 0,00 € automatisch berechnet."
                         </p>
 
                         <div class="player-inputs-list">

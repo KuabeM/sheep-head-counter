@@ -125,10 +125,10 @@ pub fn HistoryView(
                                                 <button
                                                     type="button"
                                                     class="ghost-btn"
-                                                    title=if cur_auth.is_admin { "Alle Ergebnisse bearbeiten (Admin)" } else { "Eigenes Ergebnis für diesen Abend eintragen/ändern" }
+                                                    title="Ergebnisse dieses Abends bearbeiten"
                                                     on:click=move |_| edit_session(sid)
                                                 >
-                                                    {if cur_auth.is_admin { "✏️ Abend bearbeiten" } else { "✏️ Mein Ergebnis ändern" }}
+                                                    "✏️ Abend bearbeiten"
                                                 </button>
                                                 {cur_auth.can_manage_table().then(|| view! {
                                                     <button

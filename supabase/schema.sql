@@ -159,18 +159,17 @@ drop policy if exists "sessions_select_all" on public.sessions;
 create policy "sessions_select_all" on public.sessions
     for select to authenticated using (true);
 
--- Any authenticated user who claimed a player can create a new session evening
+-- Any authenticated user can create or update a session evening
 drop policy if exists "sessions_insert_authenticated" on public.sessions;
 create policy "sessions_insert_authenticated" on public.sessions
     for insert to authenticated
-    with check (public.current_user_player_id() is not null or public.is_current_user_admin());
+    with check (true);
 
--- Creator or Admin can update session metadata (date, duration, note)
 drop policy if exists "sessions_update_creator_or_admin" on public.sessions;
 create policy "sessions_update_creator_or_admin" on public.sessions
     for update to authenticated
-    using (created_by = auth.uid() or public.is_current_user_admin())
-    with check (created_by = auth.uid() or public.is_current_user_admin());
+    using (true)
+    with check (true);
 
 -- Only Admin can delete an entire session evening
 drop policy if exists "sessions_delete_admin" on public.sessions;
@@ -184,36 +183,22 @@ drop policy if exists "results_select_all" on public.session_results;
 create policy "results_select_all" on public.session_results
     for select to authenticated using (true);
 
--- STRICT PER-PLAYER PERMISSION:
--- A regular player can ONLY insert/update their OWN `player_id` row!
--- The Admin can insert/update/delete ANY player's row!
+-- Any authenticated user can insert or update money results for an evening
 drop policy if exists "results_insert_own_or_admin" on public.session_results;
 create policy "results_insert_own_or_admin" on public.session_results
     for insert to authenticated
-    with check (
-        player_id = public.current_user_player_id()
-        or public.is_current_user_admin()
-    );
+    with check (true);
 
 drop policy if exists "results_update_own_or_admin" on public.session_results;
 create policy "results_update_own_or_admin" on public.session_results
     for update to authenticated
-    using (
-        player_id = public.current_user_player_id()
-        or public.is_current_user_admin()
-    )
-    with check (
-        player_id = public.current_user_player_id()
-        or public.is_current_user_admin()
-    );
+    using (true)
+    with check (true);
 
 drop policy if exists "results_delete_own_or_admin" on public.session_results;
 create policy "results_delete_own_or_admin" on public.session_results
     for delete to authenticated
-    using (
-        player_id = public.current_user_player_id()
-        or public.is_current_user_admin()
-    );
+    using (true);
 
 -- 5. Keep-alive RPC for GitHub Actions cron
 create or replace function public.ping_keepalive()

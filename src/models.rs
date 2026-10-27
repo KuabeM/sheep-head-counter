@@ -88,12 +88,9 @@ impl AuthSession {
         }
     }
 
-    /// Returns true if the current user is allowed to edit a specific player's score
-    pub fn can_edit_player(&self, target_player_id: &Uuid) -> bool {
-        if self.is_admin {
-            return true;
-        }
-        self.claimed_player_id.as_ref() == Some(target_player_id)
+    /// Returns true if the current user is allowed to edit a specific player's score on an evening
+    pub fn can_edit_player(&self, _target_player_id: &Uuid) -> bool {
+        self.is_logged_in()
     }
 
     /// Returns true if the current user can manage the table (add/remove players, delete full sessions, edit others)
@@ -478,7 +475,7 @@ mod tests {
         let p_korb = Uuid::new_v4();
         let p_max = Uuid::new_v4();
 
-        // Regular player (Max) can only edit Max's own score
+        // Regular logged-in player (Max) can edit evening money for anyone, but cannot manage table/admin settings
         let max_auth = AuthSession {
             user_id: Some(Uuid::new_v4()),
             email: Some("max@example.com".to_string()),
@@ -487,7 +484,7 @@ mod tests {
             is_admin: false,
         };
         assert!(max_auth.can_edit_player(&p_max));
-        assert!(!max_auth.can_edit_player(&p_korb));
+        assert!(max_auth.can_edit_player(&p_korb));
         assert!(!max_auth.can_manage_table());
 
         // Admin (Korbinian) can edit everyone and manage table
