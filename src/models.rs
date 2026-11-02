@@ -369,7 +369,7 @@ pub fn format_euros(cents: i64, show_plus: bool) -> String {
 /// Parses a user input string (accepting both "14,50" and "14.50" or "-6.2" or "15") into cents
 pub fn parse_euros_to_cents(input: &str) -> Option<i64> {
     let trimmed = input.trim().replace('€', "").replace(' ', "");
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || trimmed == "-" || trimmed == "+" {
         return Some(0);
     }
     let normalized = trimmed.replace(',', ".");

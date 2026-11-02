@@ -53,7 +53,7 @@ pub fn SessionForm(
         .map(|(idx, p)| {
             if let Some(ref ex) = existing_session {
                 if let Some(cents) = ex.result_for_player(&p.id) {
-                    let formatted = format!("{:.2}", (cents as f64) / 100.0).replace('.', ",");
+                    let formatted = format!("{:.2}", (cents as f64) / 100.0);
                     return (p.id, (true, formatted));
                 } else {
                     return (p.id, (false, String::new()));
@@ -96,10 +96,33 @@ pub fn SessionForm(
                 }
             }
             let remainder = -other_sum;
-            let formatted = format!("{:.2}", (remainder as f64) / 100.0).replace('.', ",");
+            let formatted = format!("{:.2}", (remainder as f64) / 100.0);
             if let Some(entry) = map.get_mut(&target_id) {
                 entry.0 = true;
                 entry.1 = formatted;
+            }
+        });
+    };
+
+    // Helper: Toggle +/- sign for a player's amount
+    let toggle_player_sign = move |target_id: Uuid| {
+        if !auth.get().can_edit_player(&target_id) {
+            return;
+        }
+        set_player_inputs.update(|map| {
+            if let Some(entry) = map.get_mut(&target_id) {
+                entry.0 = true;
+                let trimmed = entry.1.trim().replace(',', ".");
+                if trimmed.is_empty() {
+                    return;
+                }
+                if let Some(rest) = trimmed.strip_prefix('-') {
+                    entry.1 = rest.trim_start().to_string();
+                } else if let Some(rest) = trimmed.strip_prefix('+') {
+                    entry.1 = format!("-{}", rest.trim_start());
+                } else {
+                    entry.1 = format!("-{trimmed}");
+                }
             }
         });
     };
@@ -324,10 +347,27 @@ pub fn SessionForm(
                                             </div>
 
                                             <div class="player-amount-controls">
+                                                {can_edit.then(|| {
+                                                    let is_neg = Signal::derive(move || {
+                                                        val_str.get().trim().starts_with('-')
+                                                    });
+                                                    view! {
+                                                        <button
+                                                            type="button"
+                                                            class=move || if is_neg.get() { "sign-toggle-btn negative" } else { "sign-toggle-btn" }
+                                                            title="Vorzeichen wechseln (+ / −)"
+                                                            disabled=move || !is_part.get()
+                                                            on:click=move |_| toggle_player_sign(pid)
+                                                        >
+                                                            "+/−"
+                                                        </button>
+                                                    }
+                                                })}
+
                                                 <div class="euro-input-wrap">
                                                     <input
-                                                        type="text"
-                                                        inputmode="decimal"
+                                                        type="number"
+                                                        step="0.01"
                                                         id=input_id
                                                         placeholder="0,00"
                                                         disabled=move || !can_edit || !is_part.get()

@@ -542,6 +542,7 @@ body {
 }
 
 input[type="text"],
+input[type="number"],
 input[type="date"],
 input[type="url"],
 input[type="password"],
@@ -600,6 +601,36 @@ textarea:focus {
     border-radius: 4px;
 }
 
+.badge-taken {
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: #fecdd3;
+    background: rgba(244, 63, 94, 0.18);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+}
+
+.badge-claimed-me {
+    font-size: 0.73rem;
+    font-weight: 700;
+    color: #a7f3d0;
+    background: rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+}
+
+.badge-free {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+}
+
 .claim-box {
     border-top: 1px solid var(--border-subtle);
     padding-top: 1rem;
@@ -644,7 +675,9 @@ textarea:focus {
 }
 
 .claim-card.disabled {
-    opacity: 0.45;
+    opacity: 0.75;
+    border-color: rgba(244, 63, 94, 0.35);
+    background: rgba(244, 63, 94, 0.06);
     cursor: not-allowed;
 }
 
@@ -688,6 +721,36 @@ textarea:focus {
     gap: 0.6rem;
 }
 
+.sign-toggle-btn {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    padding: 0.55rem 0.65rem;
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: all 0.15s;
+}
+
+.sign-toggle-btn:hover:not(:disabled) {
+    border-color: var(--accent-primary);
+}
+
+.sign-toggle-btn.negative {
+    background: rgba(244, 63, 94, 0.16);
+    border-color: rgba(244, 63, 94, 0.5);
+    color: #fda4af;
+}
+
+.sign-toggle-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 .euro-input-wrap {
     position: relative;
     display: flex;
@@ -700,6 +763,14 @@ textarea:focus {
     padding-right: 1.8rem;
     font-variant-numeric: tabular-nums;
     font-weight: 600;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.euro-input-wrap input::-webkit-outer-spin-button,
+.euro-input-wrap input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 .euro-suffix {

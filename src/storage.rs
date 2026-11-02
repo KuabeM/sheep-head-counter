@@ -390,6 +390,14 @@ pub async fn claim_player(
 
         let mut is_adm = false;
         for p in &mut data.players {
+            if p.id == target_player_id && p.claimed_by.is_some() && p.claimed_by != Some(uid) {
+                return Err("Dieses Spielerprofil ist bereits vergeben.".to_string());
+            }
+        }
+        for p in &mut data.players {
+            if p.claimed_by == Some(uid) {
+                p.claimed_by = None;
+            }
             if p.id == target_player_id {
                 p.claimed_by = Some(uid);
                 is_adm = p.is_admin;

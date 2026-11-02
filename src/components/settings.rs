@@ -35,6 +35,32 @@ pub fn SettingsView(
     // JSON Import/Export state
     let (json_box, set_json_box) = signal(String::new());
 
+    // Refresh players & sessions from Supabase when opening Settings while authenticated
+    {
+        let cfg = config.get_untracked();
+        let cur_auth = auth.get_untracked();
+        if cfg.is_configured() && cur_auth.is_authenticated(true) {
+            wasm_bindgen_futures::spawn_local(async move {
+                if let Ok(remote_data) = pull_from_supabase(&cfg, &cur_auth).await {
+                    if let Some(uid) = cur_auth.user_id {
+                        if let Some(p) = remote_data
+                            .players
+                            .iter()
+                            .find(|p| p.claimed_by == Some(uid))
+                        {
+                            let mut updated_auth = cur_auth.clone();
+                            updated_auth.claimed_player_id = Some(p.id);
+                            updated_auth.is_admin = p.is_admin;
+                            save_auth_session(&updated_auth);
+                            set_auth.set(updated_auth);
+                        }
+                    }
+                    set_table_data.set(remote_data);
+                }
+            });
+        }
+    }
+
     // 1. Login via Supabase Auth (or local email session if offline)
     let on_login = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -110,7 +136,21 @@ pub fn SettingsView(
 
         wasm_bindgen_futures::spawn_local(async move {
             match supabase_sign_up(&cfg, &email, &password).await {
-                Ok(session) => {
+                Ok(mut session) => {
+                    if let Ok(remote_data) = pull_from_supabase(&cfg, &session).await {
+                        if let Some(uid) = session.user_id {
+                            if let Some(p) = remote_data
+                                .players
+                                .iter()
+                                .find(|p| p.claimed_by == Some(uid))
+                            {
+                                session.claimed_player_id = Some(p.id);
+                                session.is_admin = p.is_admin;
+                                save_auth_session(&session);
+                            }
+                        }
+                        set_table_data.set(remote_data);
+                    }
                     set_auth.set(session);
                     set_feedback_msg.set(Some((
                         true,
@@ -460,10 +500,9 @@ pub fn SettingsView(
                                 let cur_auth = auth.get();
                                 table_data.get().players.into_iter().map(|p| {
                                     let pid = p.id;
-                                    let is_mine = cur_auth.claimed_player_id == Some(pid);
-                                    let taken_by_other = p.claimed_by.is_some()
-                                        && p.claimed_by != cur_auth.user_id
-                                        && !cur_auth.is_admin;
+                                    let is_mine = cur_auth.claimed_player_id == Some(pid)
+                                        || (cur_auth.user_id.is_some() && p.claimed_by == cur_auth.user_id);
+                                    let taken_by_other = p.claimed_by.is_some() && !is_mine;
 
                                     view! {
                                         <button
@@ -482,6 +521,13 @@ pub fn SettingsView(
                                                 <span class="color-dot" style=format!("background-color: {};", p.avatar_color)></span>
                                                 <strong>{p.name}</strong>
                                                 {p.is_admin.then(|| view! { <span class="badge-admin">"👑 Admin"</span> })}
+                                                {if is_mine {
+                                                    view! { <span class="badge-claimed-me">"Dein Profil"</span> }.into_any()
+                                                } else if taken_by_other {
+                                                    view! { <span class="badge-taken">"🔒 Vergeben"</span> }.into_any()
+                                                } else {
+                                                    view! { <span class="badge-free">"Frei"</span> }.into_any()
+                                                }}
                                             </div>
                                             <span class="claim-status">
                                                 {if is_mine {
@@ -523,16 +569,27 @@ pub fn SettingsView(
 
                     <ul class="player-roster">
                         {move || {
-                            let is_adm = auth.get().can_manage_table();
+                            let cur_auth = auth.get();
+                            let is_adm = cur_auth.can_manage_table();
                             table_data.get().players.into_iter().map(|p| {
                                 let pid = p.id;
                                 let p_is_admin = p.is_admin;
+                                let is_mine = cur_auth.claimed_player_id == Some(pid)
+                                    || (cur_auth.user_id.is_some() && p.claimed_by == cur_auth.user_id);
+                                let is_taken = p.claimed_by.is_some();
                                 view! {
                                     <li class="roster-item">
                                         <div class="roster-info">
                                             <span class="color-dot" style=format!("background-color: {};", p.avatar_color)></span>
                                             <strong>{p.name}</strong>
                                             {p_is_admin.then(|| view! { <span class="badge-admin">"👑 Admin"</span> })}
+                                            {if is_mine {
+                                                view! { <span class="badge-claimed-me">"✅ Vergeben (Du)"</span> }.into_any()
+                                            } else if is_taken {
+                                                view! { <span class="badge-taken">"🔒 Vergeben"</span> }.into_any()
+                                            } else {
+                                                view! { <span class="badge-free">"Frei"</span> }.into_any()
+                                            }}
                                             {(!p.active).then(|| view! { <span class="badge-muted">"pausiert"</span> })}
                                         </div>
                                         {is_adm.then(|| view! {
