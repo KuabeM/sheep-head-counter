@@ -3,7 +3,19 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Schafkopf Kasse — Gewinn & Statistik Tracker</title>
+    <script>
+        (function () {
+            try {
+                var raw = localStorage.getItem("schafkopf_theme_mode");
+                var mode = raw ? JSON.parse(raw) : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+                if (mode === "light" || mode === "dark") {
+                    document.documentElement.setAttribute("data-theme", mode);
+                }
+            } catch (_) {}
+        })();
+    </script>
     <link data-trunk rel="css" href="style.css" />
     <link data-trunk rel="rust" data-wasm-opt="z" />
 </head>

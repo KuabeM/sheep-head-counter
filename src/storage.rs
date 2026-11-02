@@ -7,6 +7,76 @@ use uuid::Uuid;
 const STORAGE_KEY_DATA: &str = "schafkopf_table_data_v2";
 const STORAGE_KEY_CONFIG: &str = "schafkopf_supabase_config_v2";
 const STORAGE_KEY_AUTH: &str = "schafkopf_auth_session_v2";
+const STORAGE_KEY_THEME: &str = "schafkopf_theme_mode";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemeMode {
+    Dark,
+    Light,
+}
+
+impl ThemeMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+        }
+    }
+
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Dark => Self::Light,
+            Self::Light => Self::Dark,
+        }
+    }
+}
+
+fn system_prefers_light() -> bool {
+    js_sys::eval(
+        "Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)",
+    )
+    .ok()
+    .and_then(|v| v.as_bool())
+    .unwrap_or(false)
+}
+
+/// Loads saved theme mode from LocalStorage, or falls back to the OS/browser `prefers-color-scheme`
+pub fn load_theme_mode() -> ThemeMode {
+    if let Ok(saved) = LocalStorage::get::<ThemeMode>(STORAGE_KEY_THEME) {
+        return saved;
+    }
+    if system_prefers_light() {
+        ThemeMode::Light
+    } else {
+        ThemeMode::Dark
+    }
+}
+
+pub fn save_theme_mode(mode: ThemeMode) {
+    let sys_mode = if system_prefers_light() {
+        ThemeMode::Light
+    } else {
+        ThemeMode::Dark
+    };
+    if mode == sys_mode {
+        LocalStorage::delete(STORAGE_KEY_THEME);
+    } else {
+        let _ = LocalStorage::set(STORAGE_KEY_THEME, mode);
+    }
+    apply_theme_to_dom(mode);
+}
+
+pub fn apply_theme_to_dom(mode: ThemeMode) {
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        if let Some(el) = doc.document_element() {
+            let _ = el.set_attribute("data-theme", mode.as_str());
+        }
+        if let Ok(Some(meta)) = doc.query_selector("meta[name=\"color-scheme\"]") {
+            let _ = meta.set_attribute("content", mode.as_str());
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SupabaseConfig {

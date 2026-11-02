@@ -1,5 +1,5 @@
 use crate::models::{AuthSession, TableData};
-use crate::storage::SupabaseConfig;
+use crate::storage::{SupabaseConfig, ThemeMode, save_theme_mode};
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,7 +18,14 @@ pub fn Navbar(
     auth: ReadSignal<AuthSession>,
     table_data: ReadSignal<TableData>,
     sync_status: ReadSignal<String>,
+    theme: ReadSignal<ThemeMode>,
+    set_theme: WriteSignal<ThemeMode>,
 ) -> impl IntoView {
+    let toggle_theme = move |_| {
+        let next = theme.get().toggle();
+        save_theme_mode(next);
+        set_theme.set(next);
+    };
     let active_identity_label = Signal::derive(move || {
         let a = auth.get();
         let data = table_data.get();
@@ -90,6 +97,22 @@ pub fn Navbar(
             })}
 
             <div class="navbar-right">
+                <button
+                    type="button"
+                    class="theme-toggle-btn"
+                    title=move || match theme.get() {
+                        ThemeMode::Dark => "Zum hellen Modus wechseln",
+                        ThemeMode::Light => "Zum dunklen Modus wechseln",
+                    }
+                    aria-label="Farbschema umschalten"
+                    on:click=toggle_theme
+                >
+                    {move || match theme.get() {
+                        ThemeMode::Dark => "☀️ Hell",
+                        ThemeMode::Light => "🌙 Dunkel",
+                    }}
+                </button>
+
                 <button
                     type="button"
                     class=move || if auth.get().claimed_player_id.is_some() { "identity-pill logged-in" } else { "identity-pill logged-out" }

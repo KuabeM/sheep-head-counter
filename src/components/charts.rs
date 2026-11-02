@@ -200,7 +200,7 @@ pub fn CumulativeBankrollChart(
                                                     cy=cy
                                                     r="4.5"
                                                     fill=c_fill
-                                                    stroke="#0f172a"
+                                                    stroke="var(--bg-surface)"
                                                     stroke-width="1.5"
                                                 >
                                                     <title>{tip}</title>

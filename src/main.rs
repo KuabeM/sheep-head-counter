@@ -10,8 +10,8 @@ use components::settings::SettingsView;
 use leptos::prelude::*;
 use models::AuthSession;
 use storage::{
-    SupabaseConfig, check_url_hash_for_magic_link, is_auth_expired_error, load_auth_session,
-    load_local_data, pull_from_supabase, save_auth_session,
+    SupabaseConfig, apply_theme_to_dom, check_url_hash_for_magic_link, is_auth_expired_error,
+    load_auth_session, load_local_data, load_theme_mode, pull_from_supabase, save_auth_session,
 };
 use uuid::Uuid;
 
@@ -20,6 +20,8 @@ fn App() -> impl IntoView {
     let initial_config = SupabaseConfig::load();
     let initial_data = load_local_data();
     let initial_auth = load_auth_session(&initial_data);
+    let initial_theme = load_theme_mode();
+    apply_theme_to_dom(initial_theme);
     let initially_authed = initial_auth.is_authenticated(initial_config.is_configured());
 
     let initial_status = if !initially_authed {
@@ -38,6 +40,7 @@ fn App() -> impl IntoView {
     let (config, set_config) = signal(initial_config.clone());
     let (table_data, set_table_data) = signal(initial_data);
     let (auth, set_auth) = signal(initial_auth.clone());
+    let (theme, set_theme) = signal(initial_theme);
     let (editing_session_id, set_editing_session_id) = signal::<Option<Uuid>>(None);
     let (sync_status, set_sync_status) = signal(initial_status);
 
@@ -105,6 +108,8 @@ fn App() -> impl IntoView {
                 auth=auth
                 table_data=table_data
                 sync_status=sync_status
+                theme=theme
+                set_theme=set_theme
             />
 
             <main class="main-content">
